@@ -44,12 +44,12 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("AllowFrontend", policy =>
     {
         policy.WithOrigins(
                 "http://localhost:4200",
-                "https://event-frontend-blush.vercel.app",
-                "https://event-backend-production-2894.up.railway.app"
+                "http://localhost:3000",
+                "https://event-frontend-blush.vercel.app"
             )
             .AllowAnyHeader()
             .AllowAnyMethod()
@@ -67,7 +67,7 @@ var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secret = jwtSettings["Secret"];
 if (string.IsNullOrEmpty(secret))
 {
-    throw new Exception("JWT Secret is missing. Set JwtSettings__Secret in Render.");
+    throw new Exception("JWT Secret is missing. Set JwtSettings__Secret in Railway.");
 }
 
 var secretKey = Encoding.UTF8.GetBytes(secret);
@@ -101,7 +101,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddScoped<
+builder.Services.AddScoped
     EventBookingAPI.Services.INotificationService,
     EventBookingAPI.Services.NotificationService
 >();
@@ -111,8 +111,8 @@ var app = builder.Build();
 // =======================
 // PIPELINE CONFIGURATION
 // =======================
+// ✅ CRITICAL ORDER: Swagger → HTTPS → Routing → CORS → Auth → Authorization
 
-app.UseCors("AllowAll");
 app.UseSwagger();
 app.UseSwaggerUI();
 
@@ -122,6 +122,7 @@ if (app.Environment.IsProduction())
 }
 
 app.UseRouting();
+app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
