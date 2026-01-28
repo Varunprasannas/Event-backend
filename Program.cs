@@ -78,36 +78,25 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
-// ✅ FIXED: Added missing < after AddScoped
-builder.Services.AddScoped
-    EventBookingAPI.Services.INotificationService,
-    EventBookingAPI.Services.NotificationService
->();
+builder.Services.AddScoped<EventBookingAPI.Services.INotificationService, EventBookingAPI.Services.NotificationService>();
 
 var app = builder.Build();
 
 // =======================
 // PIPELINE CONFIGURATION
 // =======================
-// ⚠️ CRITICAL: CORS MUST BE FIRST (before authentication)
 app.UseCors("AllowAll");
-
 app.UseSwagger();
 app.UseSwaggerUI();
 
-// Only redirect in production if needed
 if (app.Environment.IsProduction())
 {
     app.UseHttpsRedirection();
 }
 
 app.UseRouting();
-
-// Authentication/Authorization come AFTER CORS
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
 
 // =======================
