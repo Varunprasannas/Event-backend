@@ -7,30 +7,23 @@ using System.IdentityModel.Tokens.Jwt;
 using EventBookingAPI.Data;
 
 JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
-
 var builder = WebApplication.CreateBuilder(args);
 
 // =======================
 // DATABASE CONFIGURATION
 // =======================
-
-// IMPORTANT:
-// Connection string must come from Render Environment Variable:
-// ConnectionStrings__DefaultConnection
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
     options.UseMySql(
         connectionString,
-        new MySqlServerVersion(new Version(8, 0, 36)) // DO NOT use AutoDetect in production
+        new MySqlServerVersion(new Version(8, 0, 36))
     );
 });
 
 // =======================
 // CORS CONFIGURATION
 // =======================
-
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -41,22 +34,20 @@ builder.Services.AddCors(options =>
             )
             .AllowAnyHeader()
             .AllowAnyMethod()
-            .AllowCredentials();
+            .AllowCredentials()
+            .SetPreflightMaxAge(TimeSpan.FromMinutes(10)); // Cache preflight
     });
 });
 
 // =======================
 // JWT AUTHENTICATION
 // =======================
-
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-
 var secret = jwtSettings["Secret"];
 if (string.IsNullOrEmpty(secret))
 {
     throw new Exception("JWT Secret is missing. Set JwtSettings__Secret in Render.");
 }
-
 var secretKey = Encoding.UTF8.GetBytes(secret);
 
 builder.Services.AddAuthentication(options =>
@@ -83,12 +74,10 @@ builder.Services.AddAuthentication(options =>
 // =======================
 // SERVICES
 // =======================
-
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
-builder.Services.AddScoped<
+builder.Services.AddScoped
     EventBookingAPI.Services.INotificationService,
     EventBookingAPI.Services.NotificationService
 >();
@@ -98,17 +87,21 @@ var app = builder.Build();
 // =======================
 // PIPELINE CONFIGURATION
 // =======================
+// ⚠️ CRITICAL: CORS MUST BE FIRST (before authentication)
+app.UseCors("AllowAll");
 
-// Swagger (safe in production)
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.UseHttpsRedirection();
+// Only redirect in production if needed
+if (app.Environment.IsProduction())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseRouting();
 
-app.UseCors("AllowAll");
-
+// Authentication/Authorization come AFTER CORS
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -117,7 +110,6 @@ app.MapControllers();
 // =======================
 // SAFE DATABASE SEEDING
 // =======================
-
 using (var scope = app.Services.CreateScope())
 {
     try
