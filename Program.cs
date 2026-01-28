@@ -10,29 +10,56 @@ JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// --------------------
+// DATABASE CONFIG
+// --------------------
 
-// DB Context
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+// Priority:
+// 1. Environment variable (Render)
+// 2. appsettings.json (Local)
+var connectionString =
+    Environment.GetEnvironmentVariable("MYSQL_CONNECTION")
+    ?? builder.Configuration.GetConnectionString("DefaultConnection");
 
-builder.Services.AddCors(options =>
+if (string.IsNullOrEmpty(connectionString))
 {
-    options.AddPolicy("AllowAll",
-        builder =>
+    throw new Exception("❌ MySQL connection string not configured.");
+}
+
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+{
+    options.UseMySql(
+        connectionString,
+        new MySqlServerVersion(new Version(8, 0, 36)), // ✅ SAFE
+        mySqlOptions =>
         {
-            builder.AllowAnyOrigin()
-                   .AllowAnyMethod()
-                   .AllowAnyHeader();
-        });
+            mySqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
+                errorNumbersToAdd: null
+            );
+        }
+    );
 });
 
-// JWT Authentication
+// --------------------
+// CORS
+// --------------------
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
+// --------------------
+// JWT AUTH
+// --------------------
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = Encoding.UTF8.GetBytes(jwtSettings["Secret"]);
-
-
 
 builder.Services.AddAuthentication(options =>
 {
@@ -53,43 +80,58 @@ builder.Services.AddAuthentication(options =>
         RoleClaimType = ClaimTypes.Role,
         ClockSkew = TimeSpan.Zero
     };
-
-
 });
 
+// --------------------
+// SERVICES
+// --------------------
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddScoped<EventBookingAPI.Services.INotificationService, EventBookingAPI.Services.NotificationService>();
+
+builder.Services.AddScoped<
+    EventBookingAPI.Services.INotificationService,
+    EventBookingAPI.Services.NotificationService
+>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// --------------------
+// MIDDLEWARE
+// --------------------
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-// Auto-create DB and Seed Data
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    var context = services.GetRequiredService<ApplicationDbContext>();
-    // context.Database.EnsureCreated(); // Seeder handles this
-    EventBookingAPI.Services.DataSeeder.Seed(context);
-}
+// ⚠️ DO NOT FORCE HTTPS ON RENDER
+// app.UseHttpsRedirection();
 
-app.UseHttpsRedirection();
 app.UseStaticFiles();
-
 app.UseCors("AllowAll");
 
 app.UseAuthentication();
-
 app.UseAuthorization();
 
 app.MapControllers();
+
+// --------------------
+// DB SEED (SAFE)
+// --------------------
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        context.Database.Migrate(); // safer than EnsureCreated
+        EventBookingAPI.Services.DataSeeder.Seed(context);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("⚠️ Database seed skipped:");
+        Console.WriteLine(ex.Message);
+    }
+}
 
 app.Run();
