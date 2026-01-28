@@ -38,6 +38,12 @@ namespace EventBookingAPI.Controllers
                     return BadRequest(new { message = "Email already exists" });
                 }
 
+                // Set default role if not provided
+                if (string.IsNullOrWhiteSpace(user.Role))
+                {
+                    user.Role = "user";
+                }
+
                 // TODO: Hash password in production using BCrypt or ASP.NET Core Identity
                 // user.Password = BCrypt.Net.BCrypt.HashPassword(user.Password);
 
@@ -49,7 +55,7 @@ namespace EventBookingAPI.Controllers
             catch (Exception ex)
             {
                 Console.WriteLine($"Registration error: {ex.Message}");
-                return StatusCode(500, new { message = "Registration failed" });
+                return StatusCode(500, new { message = "Registration failed", error = ex.Message });
             }
         }
 
@@ -86,7 +92,7 @@ namespace EventBookingAPI.Controllers
             catch (Exception ex)
             {
                 Console.WriteLine($"Login error: {ex.Message}");
-                return StatusCode(500, new { message = "Login failed" });
+                return StatusCode(500, new { message = "Login failed", error = ex.Message });
             }
         }
 
@@ -108,7 +114,7 @@ namespace EventBookingAPI.Controllers
                 new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
                 new Claim(ClaimTypes.Email, user.Email),
                 new Claim(ClaimTypes.Name, user.Name ?? user.Email),
-                new Claim(ClaimTypes.Role, user.Role) // ⚠️ Changed from "role" to ClaimTypes.Role
+                new Claim(ClaimTypes.Role, user.Role ?? "user")
             };
 
             var tokenDescriptor = new SecurityTokenDescriptor
@@ -128,11 +134,11 @@ namespace EventBookingAPI.Controllers
             return tokenHandler.WriteToken(token);
         }
 
-        // Optional: Test endpoint to verify CORS
-        [HttpOptions("login")]
-        public IActionResult PreflightLogin()
+        // Test endpoint to verify CORS
+        [HttpGet("test")]
+        public IActionResult Test()
         {
-            return Ok();
+            return Ok(new { message = "Auth controller is working", time = DateTime.UtcNow });
         }
     }
 
