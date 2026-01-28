@@ -23,50 +23,102 @@ namespace EventBookingAPI.Controllers
         }
 
         [HttpPost("register")]
-        public async Task<IActionResult> Register(User user)
+        public async Task<IActionResult> Register([FromBody] User user)
         {
-            if (await _context.Users.AnyAsync(u => u.Email == user.Email))
+            try
             {
-                return BadRequest("Email already exists");
+                // Validate input
+                if (string.IsNullOrWhiteSpace(user.Email) || string.IsNullOrWhiteSpace(user.Password))
+                {
+                    return BadRequest(new { message = "Email and password are required" });
+                }
+
+                if (await _context.Users.AnyAsync(u => u.Email == user.Email))
+                {
+                    return BadRequest(new { message = "Email already exists" });
+                }
+
+                // TODO: Hash password in production using BCrypt or ASP.NET Core Identity
+                // user.Password = BCrypt.Net.BCrypt.HashPassword(user.Password);
+
+                _context.Users.Add(user);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Registration successful" });
             }
-
-            // In production, hash the password!
-            _context.Users.Add(user);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Registration successful" });
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Registration error: {ex.Message}");
+                return StatusCode(500, new { message = "Registration failed" });
+            }
         }
 
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email && u.Password == request.Password);
-            if (user == null)
+            try
             {
-                return Unauthorized("Invalid credentials");
-            }
+                // Validate input
+                if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+                {
+                    return BadRequest(new { message = "Email and password are required" });
+                }
 
-            var token = GenerateJwtToken(user);
-            return Ok(new { token, user.Role, user.Name, user.UserId });
+                // Find user (in production, verify hashed password)
+                var user = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Email == request.Email && u.Password == request.Password);
+
+                if (user == null)
+                {
+                    return Unauthorized(new { message = "Invalid credentials" });
+                }
+
+                var token = GenerateJwtToken(user);
+
+                return Ok(new 
+                { 
+                    token, 
+                    role = user.Role, 
+                    name = user.Name, 
+                    userId = user.UserId 
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Login error: {ex.Message}");
+                return StatusCode(500, new { message = "Login failed" });
+            }
         }
 
         private string GenerateJwtToken(User user)
         {
             var jwtSettings = _configuration.GetSection("JwtSettings");
-            var key = Encoding.UTF8.GetBytes(jwtSettings["Secret"]);
+            var secret = jwtSettings["Secret"];
             
+            if (string.IsNullOrEmpty(secret))
+            {
+                throw new InvalidOperationException("JWT Secret is not configured");
+            }
+
+            var key = Encoding.UTF8.GetBytes(secret);
+            
+            // ✅ CRITICAL: Use ClaimTypes.Role for proper authorization
             var claims = new[]
             {
                 new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
                 new Claim(ClaimTypes.Email, user.Email),
-                new Claim("role", user.Role)
+                new Claim(ClaimTypes.Name, user.Name ?? user.Email),
+                new Claim(ClaimTypes.Role, user.Role) // ⚠️ Changed from "role" to ClaimTypes.Role
             };
 
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = new ClaimsIdentity(claims),
                 Expires = DateTime.UtcNow.AddDays(7),
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature),
+                SigningCredentials = new SigningCredentials(
+                    new SymmetricSecurityKey(key), 
+                    SecurityAlgorithms.HmacSha256Signature
+                ),
                 Issuer = jwtSettings["Issuer"],
                 Audience = jwtSettings["Audience"]
             };
@@ -75,11 +127,18 @@ namespace EventBookingAPI.Controllers
             var token = tokenHandler.CreateToken(tokenDescriptor);
             return tokenHandler.WriteToken(token);
         }
+
+        // Optional: Test endpoint to verify CORS
+        [HttpOptions("login")]
+        public IActionResult PreflightLogin()
+        {
+            return Ok();
+        }
     }
 
     public class LoginRequest
     {
-        public string Email { get; set; }
-        public string Password { get; set; }
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
     }
 }
