@@ -8,7 +8,20 @@ using EventBookingAPI.Data;
 
 JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
-var builder = WebApplication.CreateBuilder(args);
+// ✅ CRITICAL: Disable file watching for Render
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = Directory.GetCurrentDirectory(),
+    WebRootPath = "wwwroot"
+});
+
+// Clear default configuration and add without reloading
+builder.Configuration.Sources.Clear();
+builder.Configuration
+    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: false)
+    .AddEnvironmentVariables();
 
 // =======================
 // DATABASE CONFIGURATION
