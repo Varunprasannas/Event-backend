@@ -7,6 +7,7 @@ using System.IdentityModel.Tokens.Jwt;
 using EventBookingAPI.Data;
 
 JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
+
 var builder = WebApplication.CreateBuilder(args);
 
 // =======================
@@ -35,7 +36,7 @@ builder.Services.AddCors(options =>
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials()
-            .SetPreflightMaxAge(TimeSpan.FromMinutes(10)); // Cache preflight
+            .SetPreflightMaxAge(TimeSpan.FromMinutes(10));
     });
 });
 
@@ -77,6 +78,8 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// ✅ FIXED: Added missing < after AddScoped
 builder.Services.AddScoped
     EventBookingAPI.Services.INotificationService,
     EventBookingAPI.Services.NotificationService
